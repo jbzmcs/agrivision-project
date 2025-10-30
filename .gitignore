@@ -11,4 +11,5 @@ __pycache__/
 
 # Our large data and model files
 data/
-models/
+models/*
+*.csv
