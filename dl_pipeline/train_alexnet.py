@@ -174,6 +174,11 @@ def main():
     report = classification_report(all_labels, all_preds, target_names=class_names, digits=4)
     print(report)
     
+    report_path = os.path.join(os.path.dirname(MODEL_SAVE_PATH), 'alexnet_classification_report.txt')
+    with open(report_path, 'w') as f:
+        f.write(report)
+    print(f"Classification report saved to: {report_path}")
+
     print("\nConfusion Matrix (AlexNet):")
     cm = confusion_matrix(all_labels, all_preds)
     print(cm)
