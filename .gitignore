@@ -13,3 +13,9 @@ __pycache__/
 data/
 models/*
 *.csv
+
+# Catboost log files
+catboost_info/
+
+# Generated output plots and figures
+output/
