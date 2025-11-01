@@ -40,9 +40,9 @@ def split_dataset(base_dir, output_dir, train_ratio=0.6, val_ratio=0.2, test_rat
         if os.path.exists(split_dir):
             print(f"{split.capitalize()} folder created at: {split_dir}")
 
-# Example usage
+
 split_dataset(
-    base_dir="./data/train",  # your original Kaggle dataset folder
+    base_dir="./data/train",  # original Kaggle dataset folder
     output_dir="./data",      # output destination for train/val/test
     train_ratio=0.6,
     val_ratio=0.2,
