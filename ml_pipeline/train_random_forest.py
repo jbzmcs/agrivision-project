@@ -55,7 +55,14 @@ print(metrics.classification_report(y_test, y_pred))
 print(f"Overall Test Accuracy: {metrics.accuracy_score(y_test, y_pred) * 100:.2f}%")
 
 # 8. VISUALIZE: 
-metrics.ConfusionMatrixDisplay.from_predictions(y_test, y_pred, xticks_rotation=45)
+print("Generating and saving confusion matrix...")
+
+# Create a figure with a specific size (e.g., 12x12 inches)
+fig, ax = plt.subplots(figsize=(12, 12))
+ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right', fontsize=10)
+ax.set_yticklabels(ax.get_yticklabels(), fontsize=10)
+
+metrics.ConfusionMatrixDisplay.from_predictions(y_test, y_pred,ax=ax , xticks_rotation=45, cmap='viridis')
 plt.title("Random Forest Confusion Matrix")
 plt.tight_layout()
 plt.show()
