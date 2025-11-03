@@ -25,3 +25,4 @@ catboost_info/
 
 # Generated output plots and figures
 output/
+*images/
