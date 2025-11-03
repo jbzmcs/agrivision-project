@@ -8,8 +8,8 @@ This project is an end-to-end deep learning pipeline built to identify **10 diff
 
 The final product is an **interactive Streamlit web application**. Upon uploading a leaf image, the app automatically provides a prediction and a heatmap visualization from our **top-performing model (ResNet50)**. The user can then compare this result against the other three trained models in real time.
 
-![AgriVision App Demo](_archive/app_demo.png)
-*(**Note:** To get this image, run the app with `streamlit run main_app.py`, upload a photo, and take a screenshot. Save it as `app_demo.png` inside your `_archive` folder.)*
+🎬[AgriVision App Demo](https://drive.google.com/drive/folders/1G4s7_7IATuH9qAsQK7oR0Wt5s-y8qtOw?usp=sharing)
+
 
 ### 🌿 Features
 
