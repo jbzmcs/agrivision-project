@@ -1,0 +1,22 @@
+# This is our new, final "Material Dark" theme
+# .streamlit/config.toml
+
+[theme]
+
+# 1. Primary Color 
+# This is our existing olive color, which fits perfectly with the new theme.
+primaryColor = "#858429"
+
+# 2. Main Background Color 
+backgroundColor = "#11140E"
+
+# 3. Card / Container Background Color 
+# This is the color for our two main "cards"
+secondaryBackgroundColor = "#1D211A"
+
+# 4. Text Color
+# A clean off-white for maximum readability on the dark theme.
+textColor = "#EAEAEA"
+
+# 5. Font
+font = "sans serif"

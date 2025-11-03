@@ -1,3 +1,4 @@
+import sys
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -5,37 +6,117 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import torchvision.models as models
 from torch.utils.data import DataLoader
-from sklearn.metrics import classification_report, confusion_matrix, ConfusionMatrixDisplay
 import matplotlib.pyplot as plt
-import numpy as np
 import time
 import os
+import copy
 
 # --- Configuration & Hyperparameters ---
-# Project Objective: Ensure these are identical in train_resnet.py
 DATA_DIR = 'data'
-MODEL_SAVE_PATH = 'models/alexnet_final.pth'
-NUM_CLASSES = 4       
-BATCH_SIZE = 32
-NUM_EPOCHS = 200
+MODEL_SAVE_PATH = 'models/alexnet_best.pth'
+OUTPUT_DIR = 'output/alexnet'
+BATCH_SIZE = 64
+NUM_EPOCHS = 200 # Max epochs
 LEARNING_RATE = 0.001
+PATIENCE = 30 # <-- CHANGED
 # ---------------------------------------
 
-def main():
+def print_config():
     """
-    Main function to execute the AlexNet training and evaluation pipeline.
-    Fulfills Objective 2.
+    Prints the script's configuration to the console.
     """
-    print(f"Starting Objective 2: AlexNet Training")
-    print(f"Configuration: {NUM_CLASSES=}, {BATCH_SIZE=}, {NUM_EPOCHS=}, {LEARNING_RATE=}")
+    print("\n--- Configuration ---")
+    print(f"  Data Directory: {DATA_DIR}")
+    print(f"  Model Save Path: {MODEL_SAVE_PATH}")
+    print(f"  Output Directory: {OUTPUT_DIR}")
+    print(f"  Batch Size: {BATCH_SIZE}")
+    print(f"  Max Epochs: {NUM_EPOCHS}")
+    print(f"  Learning Rate: {LEARNING_RATE}")
+    print(f"  Early Stopping Patience: {PATIENCE}") # <-- This will now print 30
+    print("-----------------------\n")
 
-    # 1. Setup Device (GPU or CPU)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
+def setup_device():
+    """
+    Checks for CUDA, prints device info, and returns the device.
+    """
+    if not torch.cuda.is_available():
+        print("\n--- ERROR ---")
+        print("CUDA is not available. This script requires a GPU to run.")
+        print("Please check your PyTorch installation and NVIDIA drivers.")
+        sys.exit(1) # Exit with an error
+        
+    device = torch.device("cuda")
+    print(f"Using device: {device} ({torch.cuda.get_device_name(0)})")
+    return device
 
-    # 2. Define Data Transforms (The PyTorch way)
-    # AlexNet expects 224x224 images.
-    # Normalization values are standard for ImageNet-pretrained models.
+def run_training_loop(model, criterion, optimizer, dataloaders, device, num_epochs, patience):
+    """
+    Executes the main training loop, including early stopping and history tracking.
+    Returns the best model weights and the training history.
+    """
+    print("\nStarting training...")
+    start_time = time.time()
+    
+    best_model_wts = copy.deepcopy(model.state_dict())
+    best_acc = 0.0
+    best_epoch = 0 # <-- NEW: Track the best epoch
+    patience_counter = 0
+    history = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': []}
+
+    for epoch in range(num_epochs):
+        print(f'Epoch {epoch + 1}/{num_epochs}')
+        print('-' * 10)
+
+        # Run one train and one val epoch
+        train_loss, train_acc = train_one_epoch(model, dataloaders['train'], device, criterion, optimizer)
+        val_loss, val_acc = validate_one_epoch(model, dataloaders['val'], device, criterion)
+        
+        print(f'Train Loss: {train_loss:.4f} Acc: {train_acc:.4f}')
+        print(f'Val   Loss: {val_loss:.4f} Acc: {val_acc:.4f}')
+
+        # Store history
+        history['train_loss'].append(train_loss)
+        history['train_acc'].append(train_acc)
+        history['val_loss'].append(val_loss)
+        history['val_acc'].append(val_acc)
+
+        # Save best model and check patience
+        if val_acc > best_acc:
+            best_acc = val_acc
+            best_epoch = epoch # <-- NEW: Save the best epoch number
+            best_model_wts = copy.deepcopy(model.state_dict())
+            patience_counter = 0
+        else:
+            patience_counter += 1
+        
+        if patience_counter >= PATIENCE: # This will now use PATIENCE = 30
+            print(f"--- Early stopping triggered at epoch {epoch + 1} ---")
+            break
+            
+    time_elapsed = time.time() - start_time
+    print(f'\nTraining complete in {time_elapsed // 60:.0f}m {time_elapsed % 60:.0f}s')
+    
+    # --- CHANGED: Updated print statement ---
+    print(f'Best validation accuracy: {best_acc:.4f} (achieved at epoch {best_epoch + 1})')
+    # ----------------------------------------
+    
+    return best_model_wts, history
+
+def save_model(model_weights, save_path):
+    """
+    Saves the model weights to the specified path.
+    """
+    print(f"\nSaving best model to {save_path}...")
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    torch.save(model_weights, save_path)
+    print("Model saved successfully.")
+
+def get_data_loaders(data_dir, batch_size):
+    """
+    Creates and returns the training and validation data loaders.
+    """
+    print(f"Loading data from '{data_dir}'...")
+    
     data_transforms = {
         'train': transforms.Compose([
             transforms.RandomResizedCrop(224),
@@ -48,150 +129,176 @@ def main():
             transforms.CenterCrop(224),
             transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-        ]),
+        ])
     }
 
-    # 3. Load Data using ImageFolder
-    print(f"Loading data from '{DATA_DIR}'...")
     image_datasets = {
-        'train': datasets.ImageFolder(os.path.join(DATA_DIR, 'train'), data_transforms['train']),
-        'val': datasets.ImageFolder(os.path.join(DATA_DIR, 'val'), data_transforms['val'])
+        'train': datasets.ImageFolder(os.path.join(data_dir, 'train'), data_transforms['train']),
+        'val': datasets.ImageFolder(os.path.join(data_dir, 'val'), data_transforms['val'])
     }
     
     dataloaders = {
-        'train': DataLoader(image_datasets['train'], batch_size=BATCH_SIZE, shuffle=True, num_workers=4),
-        'val': DataLoader(image_datasets['val'], batch_size=BATCH_SIZE, shuffle=False, num_workers=4)
+        'train': DataLoader(image_datasets['train'], batch_size=batch_size, shuffle=True, num_workers=4),
+        'val': DataLoader(image_datasets['val'], batch_size=batch_size, shuffle=False, num_workers=4)
     }
-
-    dataset_sizes = {x: len(image_datasets[x]) for x in ['train', 'val']}
+    
     class_names = image_datasets['train'].classes
-    print(f"Found {len(class_names)} classes: {class_names}")
-    if len(class_names) != NUM_CLASSES:
-        print(f"Warning: NUM_CLASSES is set to {NUM_CLASSES} but dataset has {len(class_names)} classes.")
-        # This is a critical check.
-        # For our project, we will trust the NUM_CLASSES variable.
-        # An architect might halt here, but we will proceed.
+    num_classes = len(class_names)
+    
+    print(f"Found {num_classes} classes: {class_names}")
+    # Return num_classes, not dataset_sizes (which is not used in main)
+    return dataloaders, num_classes
 
-    # 4. Load Pre-trained AlexNet and Modify for Transfer Learning
+def build_model(num_classes):
+    """
+    Builds the AlexNet model, freezes base layers, and replaces the classifier.
+    """
     print("Loading pre-trained AlexNet model...")
     model = models.alexnet(weights=models.AlexNet_Weights.DEFAULT)
-
-    # Freeze all parameters in the 'features' (convolutional) section
+    
     for param in model.parameters():
         param.requires_grad = False
-
-    # Get the number of input features for the classifier
+        
     num_ftrs = model.classifier[6].in_features
-
-    # Replace the final layer (model.classifier[6]) with a new, unfrozen
-    # Linear layer that matches our number of classes.
-    model.classifier[6] = nn.Linear(num_ftrs, NUM_CLASSES)
-
-    # Move the model to the configured device (GPU/CPU)
-    model = model.to(device)
-
-    # 5. Define Loss Function and Optimizer
-    # We only want to optimize the parameters of the *new* classifier head
-    # We filter for only parameters where requires_grad == True
-    params_to_update = model.parameters()
-    print("Parameters to update:")
-    for name, param in model.named_parameters():
-        if param.requires_grad:
-            print(f"\t{name}")
-            
-    optimizer = optim.Adam(filter(lambda p: p.requires_grad, params_to_update), lr=LEARNING_RATE)
-    criterion = nn.CrossEntropyLoss()
-
-    # 6. Training Loop
-    print("\nStarting training...")
-    start_time = time.time()
+    model.classifier[6] = nn.Linear(num_ftrs, num_classes)
     
-    for epoch in range(NUM_EPOCHS):
-        print(f'Epoch {epoch+1}/{NUM_EPOCHS}')
-        print('-' * 10)
+    return model
 
-        # Each epoch has a training and validation phase
-        for phase in ['train', 'val']:
-            if phase == 'train':
-                model.train()  # Set model to training mode
-            else:
-                model.eval()   # Set model to evaluate mode
-
-            running_loss = 0.0
-            running_corrects = 0
-
-            # Iterate over data.
-            for inputs, labels in dataloaders[phase]:
-                inputs = inputs.to(device)
-                labels = labels.to(device)
-
-                # Zero the parameter gradients
-                optimizer.zero_grad()
-
-                # Forward pass
-                # Track history only if in train phase
-                with torch.set_grad_enabled(phase == 'train'):
-                    outputs = model(inputs)
-                    _, preds = torch.max(outputs, 1)
-                    loss = criterion(outputs, labels)
-
-                    # Backward pass + optimize only if in training phase
-                    if phase == 'train':
-                        loss.backward()
-                        optimizer.step()
-
-                # Statistics
-                running_loss += loss.item() * inputs.size(0)
-                running_corrects += torch.sum(preds == labels.data)
-
-            epoch_loss = running_loss / dataset_sizes[phase]
-            epoch_acc = running_corrects.double() / dataset_sizes[phase]
-
-            print(f'{phase} Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}')
-
-    time_elapsed = time.time() - start_time
-    print(f'\nTraining complete in {time_elapsed // 60:.0f}m {time_elapsed % 60:.0f}s')
-
-    # 7. Final Evaluation (Objective 4 Requirement)
-    print("\n--- Final Model Evaluation ---")
-    model.eval()  # Set model to evaluation mode
+def print_model_summary(model):
+    """
+    Calculates and prints the total and trainable parameters.
+    """
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     
-    all_preds = []
-    all_labels = []
-    
-    with torch.no_grad():
-        for inputs, labels in dataloaders['val']:
-            inputs = inputs.to(device)
-            labels = labels.to(device)
-            
+    print("\n--- Model Summary ---")
+    print(f"  Total Parameters: {total_params:,}")
+    print(f"  Trainable Parameters: {trainable_params:,}")
+    print(f"  Non-Trainable Parameters: {total_params - trainable_params:,}")
+    print("-----------------------\n")
+
+def train_one_epoch(model, loader, device, criterion, optimizer):
+    """
+    Runs a single training epoch.
+    """
+    model.train()
+    running_loss = 0.0
+    running_corrects = 0
+
+    for inputs, labels in loader:
+        inputs, labels = inputs.to(device), labels.to(device)
+        
+        optimizer.zero_grad()
+        
+        with torch.set_grad_enabled(True):
             outputs = model(inputs)
             _, preds = torch.max(outputs, 1)
+            loss = criterion(outputs, labels)
             
-            all_preds.extend(preds.cpu().numpy())
-            all_labels.extend(labels.cpu().numpy())
+            loss.backward()
+            optimizer.step()
 
-    print("\nClassification Report (AlexNet):")
-    report = classification_report(all_labels, all_preds, target_names=class_names, digits=4)
-    print(report)
+        running_loss += loss.item() * inputs.size(0)
+        running_corrects += torch.sum(preds == labels.data)
+        
+    epoch_loss = running_loss / len(loader.dataset)
+    epoch_acc = running_corrects.double() / len(loader.dataset)
+    return epoch_loss, epoch_acc.item()
+
+def validate_one_epoch(model, loader, device, criterion):
+    """
+    Runs a single validation epoch.
+    """
+    model.eval()
+    running_loss = 0.0
+    running_corrects = 0
+
+    with torch.no_grad():
+        for inputs, labels in loader:
+            inputs, labels = inputs.to(device), labels.to(device)
+
+            outputs = model(inputs)
+            _, preds = torch.max(outputs, 1)
+            loss = criterion(outputs, labels)
+
+            running_loss += loss.item() * inputs.size(0)
+            running_corrects += torch.sum(preds == labels.data)
+
+    epoch_loss = running_loss / len(loader.dataset)
+    epoch_acc = running_corrects.double() / len(loader.dataset)
+    return epoch_loss, epoch_acc.item()
+
+def save_learning_curve(history, output_path):
+    """
+    Saves a plot of training & validation loss and accuracy.
+    """
+    print(f"Saving learning curve to {output_path}...")
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
     
-    print("\nConfusion Matrix (AlexNet):")
-    cm = confusion_matrix(all_labels, all_preds)
-    print(cm)
-
-    print("\nGenerating confusion matrix plot...")
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=class_names)
-    disp.plot(cmap=plt.cm.Blues)
-    plt.title("AlexNet Confusion Matrix")
-    plt.show()  # This will pause the script and open the plot window
-
-    # 8. Save the Trained Model
-    print(f"\nSaving model to {MODEL_SAVE_PATH}...")
-    # Ensure the 'models' directory exists
-    os.makedirs(os.path.dirname(MODEL_SAVE_PATH), exist_ok=True)
+    train_loss = history['train_loss']
+    val_loss = history['val_loss']
+    train_acc = history['train_acc']
+    val_acc = history['val_acc']
+    epochs = range(1, len(train_loss) + 1)
     
-    # We save the model's state_dict, which is the PyTorch standard
-    torch.save(model.state_dict(), MODEL_SAVE_PATH)
-    print("AlexNet training and evaluation complete.")
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 12))
+    
+    # Plot Loss
+    ax1.plot(epochs, train_loss, 'b-o', label='Training Loss')
+    ax1.plot(epochs, val_loss, 'r-o', label='Validation Loss')
+    ax1.set_title('Training and Validation Loss')
+    ax1.set_xlabel('Epochs')
+    ax1.set_ylabel('Loss')
+    ax1.legend()
+    ax1.grid(True)
+    
+    # Plot Accuracy
+    ax2.plot(epochs, train_acc, 'b-o', label='Training Accuracy')
+    ax2.plot(epochs, val_acc, 'r-o', label='Validation Accuracy')
+    ax2.set_title('Training and Validation Accuracy')
+    ax2.set_xlabel('Epochs')
+    ax2.set_ylabel('Accuracy')
+    ax2.legend()
+    ax2.grid(True)
+    
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=300)
+    plt.close()
+
+def main():
+    """
+    Orchestrates the training and validation process.
+    """
+    print(f"Starting Objective 2: AlexNet Training (Refactored)")
+    
+    # 1. Setup
+    print_config()
+    device = setup_device()
+    dataloaders, num_classes = get_data_loaders(DATA_DIR, BATCH_SIZE) # <-- Fixed variable name
+    
+    # 2. Build Model
+    model = build_model(num_classes)
+    model = model.to(device)
+
+    print_model_summary(model)
+
+    # 3. Define Optimizer and Loss
+    optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=LEARNING_RATE)
+    criterion = nn.CrossEntropyLoss()
+
+    # 4. Run Training
+    best_model_wts, history = run_training_loop(
+        model, criterion, optimizer, dataloaders, 
+        device, NUM_EPOCHS, PATIENCE
+    )
+
+    # 5. Save Artifacts
+    save_model(best_model_wts, MODEL_SAVE_PATH)
+    
+    plot_path = os.path.join(OUTPUT_DIR, 'learning_curve.png')
+    save_learning_curve(history, plot_path)
+    
+    print("\nAlexNet training complete.")
 
 if __name__ == '__main__':
     main()
